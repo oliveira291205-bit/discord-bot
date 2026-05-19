@@ -1,6 +1,8 @@
 # Segredos e configuracoes locais
 .env
 .env.*
+*.env
+.env.local
 !.env.example
 
 # Ambientes Python
@@ -21,6 +23,7 @@ htmlcov/
 
 # Banco/memoria local do bot
 data/
+memory.sqlite3
 *.sqlite3
 *.sqlite3-*
 *.db

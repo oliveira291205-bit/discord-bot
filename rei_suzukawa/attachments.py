@@ -155,7 +155,7 @@ def extract_image_text(data: bytes) -> tuple[str, str]:
         if len(tesseract_cmd) == 1:
             pytesseract.pytesseract.tesseract_cmd = tesseract_cmd[0]
             with Image.open(io.BytesIO(data)) as image:
-                text = pytesseract.image_to_string(image, lang="por+eng")
+                text = image_to_string_with_fallback(pytesseract, image)
         else:
             text = run_tesseract_command(data, tesseract_cmd)
         if text.strip():
@@ -163,6 +163,18 @@ def extract_image_text(data: bytes) -> tuple[str, str]:
         return "", "nao encontrei texto legivel na imagem"
     except Exception as exc:
         return "", f"erro fazendo OCR da imagem: {exc}"
+
+
+def image_to_string_with_fallback(pytesseract_module: object, image: object) -> str:
+    errors: list[str] = []
+    for language in ("por+eng", "eng", None):
+        try:
+            if language:
+                return pytesseract_module.image_to_string(image, lang=language)
+            return pytesseract_module.image_to_string(image)
+        except Exception as exc:
+            errors.append(str(exc))
+    raise RuntimeError("; ".join(errors[-2:]) or "OCR falhou")
 
 
 def find_tesseract_command() -> list[str] | None:
@@ -203,20 +215,23 @@ def run_tesseract_command(data: bytes, command: list[str]) -> str:
         with Image.open(io.BytesIO(data)) as image:
             image.save(input_path)
 
-        result = subprocess.run(
-            [*command, str(input_path), str(output_base), "-l", "por+eng"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        output_path = output_base.with_suffix(".txt")
-        if result.returncode != 0:
-            stderr = result.stderr.strip() or "sem detalhe"
-            raise RuntimeError(f"tesseract falhou: {stderr}")
-        if not output_path.exists():
-            return ""
-        return output_path.read_text(encoding="utf-8", errors="replace")
+        last_error = ""
+        for language in ("por+eng", "eng", ""):
+            args = [*command, str(input_path), str(output_base)]
+            if language:
+                args.extend(["-l", language])
+            result = subprocess.run(
+                args,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            output_path = output_base.with_suffix(".txt")
+            if result.returncode == 0 and output_path.exists():
+                return output_path.read_text(encoding="utf-8", errors="replace")
+            last_error = result.stderr.strip() or "sem detalhe"
+        raise RuntimeError(f"tesseract falhou: {last_error}")
 
 
 def trim_extracted_text(text: str, limit: int = MAX_EXTRACTED_CHARS) -> str:

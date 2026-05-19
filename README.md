@@ -19,32 +19,22 @@ No Discord Developer Portal, mantenha `Message Content Intent` ativado.
 
 ## Rodar No Termux
 
-No Android com Termux, use estes passos dentro da pasta do projeto:
+No Android com Termux, o guia completo esta em [README_TERMUX.md](README_TERMUX.md).
+
+Fluxo curto dentro da pasta do projeto:
 
 ```bash
-pkg update -y
-pkg install -y git python clang libjpeg-turbo zlib freetype libpng
-./scripts/termux_install.sh
-nano .env
-./scripts/termux_run.sh
+chmod +x install_termux.sh
+./install_termux.sh
 ```
 
-No `.env`, preencha pelo menos:
-
-```env
-DISCORD_TOKEN=seu_token_do_discord
-DEEPSEEK_API_KEY=sua_chave_da_deepseek
-```
-
-Para deixar reiniciando sozinho enquanto a sessao Termux estiver aberta:
+Depois, para iniciar normalmente:
 
 ```bash
-./scripts/termux_keepalive.sh
+./run_bot.sh
 ```
 
-Arquivos locais como `.env`, `.venv/`, `data/` e `logs/` ficam fora do Git pelo `.gitignore`.
-
-Se o Termux falhar tentando compilar `jiter`/`maturin`, atualize o repo. O bot nao depende mais do pacote `openai`; ele chama a DeepSeek por HTTP direto com `httpx`, que evita esse erro comum em Android/ARM.
+O instalador pede `DISCORD_TOKEN` e `DEEPSEEK_API_KEY` no terminal e salva apenas no `.env` local do Android. Arquivos locais como `.env`, `.venv/`, `data/` e `logs/` ficam fora do Git pelo `.gitignore`.
 
 ## Memoria SQLite
 

@@ -5,6 +5,7 @@ from rei_suzukawa.attachments import (
     analyze_attachment,
     attachment_branches,
     classify_attachment,
+    image_to_string_with_fallback,
     format_attachment_context,
 )
 from rei_suzukawa.bot import (
@@ -117,6 +118,17 @@ class AttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(is_direct_gif_url(url) for url in all_urls))
         blocked_ids = {"cB7Ea7Y0Soe55gCbDd", "qs2YFQtK2IeRmUVZiG", "b5VSLKppK5VywF8SNQ", "UhcFP76fWEeGLJjEdo"}
         self.assertFalse(any(any(blocked_id in url for blocked_id in blocked_ids) for url in all_urls))
+
+    def test_ocr_language_fallback(self) -> None:
+        class FakeTesseract:
+            def image_to_string(self, image, lang=None):
+                if lang == "por+eng":
+                    raise RuntimeError("missing por")
+                if lang == "eng":
+                    return "ok text"
+                return "fallback"
+
+        self.assertEqual(image_to_string_with_fallback(FakeTesseract(), object()), "ok text")
 
 
 if __name__ == "__main__":

@@ -70,6 +70,23 @@ class SQLiteMemoryTests(unittest.TestCase):
             finally:
                 service.close()
 
+    def test_observed_message_saves_generic_chat_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = MemoryService(MemoryConfig(sqlite_path=Path(tmp) / "memory.sqlite3"))
+            try:
+                context = MemoryContext(
+                    guild_id="1",
+                    channel_id="10",
+                    user_id="123",
+                    author_name="Alek",
+                    channel_name="geral",
+                )
+                service.save_observed_message(context=context, text="isso aqui foi uma conversa qualquer do chat")
+                memories = service.store.list_memories(user_id="123", channel_id="10", limit=10)
+                self.assertTrue(any("conversa qualquer" in memory.content for memory in memories))
+            finally:
+                service.close()
+
 
 class PromptBudgetTests(unittest.TestCase):
     def test_limiter_reduces_giant_prompt(self) -> None:
