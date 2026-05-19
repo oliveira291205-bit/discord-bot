@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ai.deepseek_prompt_limiter import PromptBudgetConfig
+from features.config import FunConfig, LocalReplyConfig, XPConfig
 from memory.memory_config import MemoryConfig, NaturalInteractionConfig
 from rei_suzukawa.bot import BotSettings, ReiSuzukawaBot
 from rei_suzukawa.deepseek import DeepSeekSettings
@@ -19,6 +20,9 @@ class ObserveAllMessagesTests(unittest.TestCase):
                 max_history=14,
                 memory=MemoryConfig(sqlite_path=Path(tmp) / "memory.sqlite3"),
                 natural_interactions=NaturalInteractionConfig(),
+                fun=FunConfig(),
+                xp=XPConfig(),
+                local_replies=LocalReplyConfig(),
                 prompt_budget=PromptBudgetConfig(),
                 auto_memory_enabled=True,
                 observe_all_messages=True,

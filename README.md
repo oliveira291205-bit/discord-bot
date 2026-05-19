@@ -119,6 +119,70 @@ Controles principais:
 
 Ele tambem entende frases naturais de preferencia, como `sem zoeira`, `pode zoar`, `fala serio`, `para de me chamar assim` e `me chama de...`, salvando isso na memoria segmentada do usuario.
 
+## Recursos Locais
+
+O bot tem respostas locais para economizar tokens. Ele nao chama DeepSeek para cumprimentos simples, agradecimentos, risadas curtas, sucesso basico, status e erros conhecidos.
+
+Detector de erros coberto:
+
+- `Traceback`
+- `SyntaxError`
+- `ModuleNotFoundError`
+- `ImportError`
+- `Permission denied`
+- `No such file or directory`
+- erros comuns de `pip`, `git`, `.env`, SQLite e Tesseract/OCR
+
+Status natural:
+
+```text
+goku status
+status do bot
+diagnostico
+o bot ta online?
+```
+
+Mostra apenas estado seguro: DeepSeek configurado ou nao, SQLite, OCR/Tesseract, ambiente, uptime e versao do Python. Tokens nunca sao exibidos.
+
+## XP E Conquistas
+
+O XP usa o mesmo SQLite local (`data/memory.sqlite3`) e cria as tabelas `user_xp` e `user_achievements`.
+
+Recompensas com cooldown:
+
+- estudo: `+5 XP`
+- ajuda de programacao: `+10 XP`
+- erro resolvido: `+15 XP`
+- tarefa concluida: `+20 XP`
+- calculo: `+25 XP`
+- Termux/Git/Python em contexto de aprendizado: `+30 XP`
+
+Titulos:
+
+- Nivel 1: Saiyajin Iniciante
+- Nivel 3: Aluno do Mestre Kame
+- Nivel 5: Dev em Treinamento
+- Nivel 8: Cacador de Bugs
+- Nivel 10: Mestre do Termux
+- Nivel 15: Guerreiro do Codigo
+- Nivel 20: Super Saiyajin Dev
+
+Configs:
+
+```env
+FUN_ENABLED=true
+FUN_USE_AI=false
+FUN_REPLY_CHANCE=0.03
+FUN_COOLDOWN_SECONDS=300
+FUN_MAX_PER_CHANNEL_HOUR=5
+FUN_SAFE_ROASTS_ONLY=true
+XP_ENABLED=true
+XP_COOLDOWN_SECONDS=180
+XP_MAX_PER_USER_HOUR=100
+LOCAL_REPLIES_ENABLED=true
+LOCAL_REPLIES_CALL_AI_ONLY_WHEN_NEEDED=true
+```
+
 ## Comandos
 
 - `!ajuda` mostra os comandos.

@@ -19,6 +19,11 @@ from dotenv import load_dotenv
 
 if __package__:
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
+    from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.error_detector import detect_error_reply
+    from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
+    from features.status import BotStatusInfo, render_status, wants_status
+    from features.xp import XPService
     from memory.memory_commands import MemoryCommands
     from memory.memory_config import MemoryConfig, NaturalInteractionConfig
     from memory.natural_interactions import NaturalInteractionManager
@@ -47,6 +52,11 @@ if __package__:
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
+    from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.error_detector import detect_error_reply
+    from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
+    from features.status import BotStatusInfo, render_status, wants_status
+    from features.xp import XPService
     from memory.memory_commands import MemoryCommands
     from memory.memory_config import MemoryConfig, NaturalInteractionConfig
     from memory.natural_interactions import NaturalInteractionManager
@@ -124,6 +134,9 @@ class BotSettings:
     max_history: int
     memory: MemoryConfig
     natural_interactions: NaturalInteractionConfig
+    fun: FunConfig
+    xp: XPConfig
+    local_replies: LocalReplyConfig
     prompt_budget: PromptBudgetConfig
     auto_memory_enabled: bool
     observe_all_messages: bool
@@ -143,6 +156,9 @@ class BotSettings:
             max_history=_as_int("REI_MAX_HISTORY", 14),
             memory=MemoryConfig.from_env(),
             natural_interactions=NaturalInteractionConfig.from_env(),
+            fun=FunConfig.from_env(),
+            xp=XPConfig.from_env(),
+            local_replies=LocalReplyConfig.from_env(),
             prompt_budget=PromptBudgetConfig.from_env(),
             auto_memory_enabled=_as_bool("REI_AUTO_MEMORY", True),
             observe_all_messages=_as_bool("REI_OBSERVE_ALL_MESSAGES", True),
@@ -177,8 +193,11 @@ class ReiSuzukawaBot(commands.Bot):
         self.settings = settings
         self.deepseek = DeepSeekClient(settings.deepseek)
         self.memory_service = MemoryService(settings.memory)
+        self.xp_service = XPService(settings.memory.sqlite_path, settings.xp)
+        self.local_replies = LocalReplyEngine(enabled=settings.local_replies.enabled)
         self.natural_interactions = NaturalInteractionManager(settings.natural_interactions)
         self.prompt_budget = PromptBudgetManager(settings.prompt_budget)
+        self.started_at = time.monotonic()
         self.channel_history: DefaultDict[int, Deque[dict[str, str]]] = defaultdict(
             lambda: deque(maxlen=settings.max_history)
         )
@@ -192,6 +211,7 @@ class ReiSuzukawaBot(commands.Bot):
         await self.add_cog(MemoryCommands(self, self.memory_service))
 
     async def close(self) -> None:
+        self.xp_service.close()
         self.memory_service.close()
         await super().close()
 
@@ -227,6 +247,31 @@ class ReiSuzukawaBot(commands.Bot):
             return
 
         context = self.memory_service.context_from_message(message)
+        xp_event = self.xp_service.award(
+            user_id=context.user_id,
+            guild_id=context.guild_id,
+            reason=self.xp_service.classify_reason(message.content),
+        )
+
+        error_hint = detect_error_reply(message.content)
+        if error_hint:
+            event = self.xp_service.award(
+                user_id=context.user_id,
+                guild_id=context.guild_id,
+                reason=error_hint.xp_reason,
+            )
+            await self.send_text_reply_with_gif(
+                message,
+                append_xp_message(error_hint.reply, event or xp_event),
+                query=message.content,
+                force=True,
+            )
+            return
+
+        if wants_status(message.content):
+            await self.send_text_reply_with_gif(message, self.render_bot_status(), query=message.content, force=True)
+            return
+
         natural_answer = self.natural_interactions.maybe_handle_lore_confirmation(
             context=context,
             text=message.content,
@@ -256,6 +301,24 @@ class ReiSuzukawaBot(commands.Bot):
         bot_id = self.user.id if self.user else None
         was_mentioned = bool(self.user and self.user in message.mentions)
         triggered = detect_trigger(message.content)
+        local_reply = self.local_replies.generate(
+            clean_user_prompt(message.content, bot_id) if (was_mentioned or triggered) else message.content,
+            direct=was_mentioned or triggered,
+        )
+        if local_reply and (was_mentioned or triggered):
+            event = self.xp_service.award(
+                user_id=context.user_id,
+                guild_id=context.guild_id,
+                reason=local_reply.xp_reason,
+            )
+            await self.send_text_reply_with_gif(
+                message,
+                append_xp_message(local_reply.text, event or xp_event),
+                query=message.content,
+                force=True,
+            )
+            return
+
         if not (was_mentioned or triggered):
             decision = self.natural_interactions.should_interact_naturally(
                 message=message,
@@ -279,11 +342,20 @@ class ReiSuzukawaBot(commands.Bot):
         prompt = clean_user_prompt(message.content, bot_id)
         if not prompt:
             prompt = "Me chamaram. Puxe assunto com naturalidade."
+        if needs_teacher_mode(prompt):
+            prompt = (
+                "Modo professor de treino: explique passo a passo, com linguagem simples, exemplo curto, "
+                "sem pular etapas e com humor leve de parceiro de treino.\n\n"
+                f"Pedido do usuario: {prompt}"
+            )
 
         async with message.channel.typing():
             answer = await self.ask_deepseek(message, prompt, attachment_analyses=attachment_analyses)
 
         await self.send_ai_reply(message, answer)
+
+        if xp_event and xp_event.message:
+            await self.send_text_reply_with_gif(message, xp_event.message, query=message.content, force=True)
 
     async def ask_deepseek(
         self,
@@ -394,6 +466,25 @@ class ReiSuzukawaBot(commands.Bot):
             {"role": "user", "content": f"{author_name} (discord_id={user_id}): {prompt}"}
         )
         self.channel_history[channel_id].append({"role": "assistant", "content": answer})
+
+    def render_bot_status(self) -> str:
+        memory_ok = True
+        memory_error = None
+        try:
+            self.memory_service.store.count_all()
+        except Exception as exc:
+            memory_ok = False
+            memory_error = str(exc)[:120]
+
+        return render_status(
+            BotStatusInfo(
+                deepseek_enabled=self.deepseek.enabled,
+                memory_ok=memory_ok,
+                memory_error=memory_error,
+                sqlite_path=str(self.settings.memory.sqlite_path),
+                started_at=self.started_at,
+            )
+        )
 
     async def generate_channel_resenha(self, message: discord.Message) -> str:
         try:
@@ -1017,6 +1108,13 @@ def merge_prompt_with_attachments(prompt: str, analyses: list[AttachmentAnalysis
     if not attachment_context:
         return prompt
     return f"{prompt}\n\n{attachment_context}"
+
+
+def append_xp_message(text: str, event: object | None) -> str:
+    message = getattr(event, "message", None)
+    if not message:
+        return text
+    return f"{text}\n\n{message}"
 
 
 def _as_int(env_name: str, default: int) -> int:
