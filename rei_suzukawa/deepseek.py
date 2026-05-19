@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, RateLimitError
+import httpx
 
 
 class DeepSeekNotConfigured(RuntimeError):
@@ -25,41 +25,51 @@ class DeepSeekSettings:
 class DeepSeekClient:
     def __init__(self, settings: DeepSeekSettings) -> None:
         self.settings = settings
-        self._client: AsyncOpenAI | None = None
-        if settings.api_key:
-            self._client = AsyncOpenAI(
-                api_key=settings.api_key,
-                base_url=settings.base_url,
-                timeout=settings.timeout,
-            )
 
     @property
     def enabled(self) -> bool:
-        return self._client is not None
+        return bool(self.settings.api_key)
 
     async def chat(self, messages: list[dict[str, str]]) -> str:
-        if self._client is None:
+        if not self.settings.api_key:
             raise DeepSeekNotConfigured("DEEPSEEK_API_KEY nao foi configurada.")
 
-        try:
-            response = await self._client.chat.completions.create(
-                model=self.settings.model,
-                messages=messages,
-                temperature=self.settings.temperature,
-            )
-        except RateLimitError as exc:
-            raise DeepSeekRequestError("A DeepSeek limitou as requisicoes agora. Tente de novo em instantes.") from exc
-        except APITimeoutError as exc:
-            raise DeepSeekRequestError("A DeepSeek demorou demais para responder.") from exc
-        except APIConnectionError as exc:
-            raise DeepSeekRequestError("Nao consegui conectar na DeepSeek.") from exc
-        except APIError as exc:
-            raise DeepSeekRequestError(f"A DeepSeek retornou erro: {exc}") from exc
+        url = self.settings.base_url.rstrip("/") + "/chat/completions"
+        payload = {
+            "model": self.settings.model,
+            "messages": messages,
+            "temperature": self.settings.temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.settings.api_key}",
+            "Content-Type": "application/json",
+        }
 
-        if not response.choices:
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
+                response = await client.post(url, json=payload, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise DeepSeekRequestError("A DeepSeek demorou demais para responder.") from exc
+        except httpx.TransportError as exc:
+            raise DeepSeekRequestError("Nao consegui conectar na DeepSeek.") from exc
+
+        if response.status_code == 429:
+            raise DeepSeekRequestError("A DeepSeek limitou as requisicoes agora. Tente de novo em instantes.")
+        if response.status_code >= 400:
+            detail = response.text[:300].strip()
+            raise DeepSeekRequestError(f"A DeepSeek retornou HTTP {response.status_code}: {detail}") from None
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise DeepSeekRequestError("A DeepSeek retornou uma resposta que nao e JSON.") from exc
+
+        choices = data.get("choices") or []
+        if not choices:
             raise DeepSeekRequestError("A DeepSeek nao retornou nenhuma resposta.")
 
-        content = response.choices[0].message.content
+        message = choices[0].get("message") or {}
+        content = message.get("content")
         if not content:
             raise DeepSeekRequestError("A DeepSeek retornou uma resposta vazia.")
-        return content.strip()
+        return str(content).strip()

@@ -44,6 +44,8 @@ Para deixar reiniciando sozinho enquanto a sessao Termux estiver aberta:
 
 Arquivos locais como `.env`, `.venv/`, `data/` e `logs/` ficam fora do Git pelo `.gitignore`.
 
+Se o Termux falhar tentando compilar `jiter`/`maturin`, atualize o repo. O bot nao depende mais do pacote `openai`; ele chama a DeepSeek por HTTP direto com `httpx`, que evita esse erro comum em Android/ARM.
+
 ## Memoria SQLite
 
 O fluxo principal nao usa mais Obsidian. A memoria agora e local, gratuita e persistente em:
