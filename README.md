@@ -1,6 +1,6 @@
 # Goku
 
-Bot de Discord feito com `discord.py` e DeepSeek. Ele responde quando alguem menciona o bot, escreve `goku`, `cacaroto` ou `kakaroto`, usa comandos administrativos, ou continua um fluxo recente iniciado com ele.
+Bot de Discord feito com `discord.py` e DeepSeek. Ele responde somente quando alguem menciona o bot ou escreve `goku`, `cacaroto` ou `kakaroto`.
 
 ## Como Rodar
 
@@ -106,7 +106,7 @@ REI_MEMORY_ENABLED=false
 
 ## Interacoes Naturais
 
-O Goku nao entra mais em conversas soltas. Ele so responde quando alguem chama `Goku`, `Cacaroto` ou `Kakaroto`, menciona o bot diretamente, responde uma mensagem dele, ou continua um fluxo recente dentro da janela configurada.
+O Goku nao entra mais em conversas soltas. Ele so responde quando alguem chama `Goku`, `Cacaroto` ou `Kakaroto`, ou menciona o bot diretamente.
 
 Exemplos:
 
@@ -125,11 +125,12 @@ Controles principais:
 - `REI_NATURAL_AVOID_SERIOUS=true`: evita interromper canais/assuntos serios.
 - `REI_NATURAL_USE_AI=false`: respostas espontaneas nao chamam DeepSeek por padrao.
 - `REI_WAKE_WORDS=goku,cacaroto,kakaroto`: nomes de ativacao.
-- `REI_ACTIVE_CONVERSATION_SECONDS=120`: janela curta para continuar um fluxo ja iniciado.
+- `REI_ALLOW_REPLY_TO_BOT=false`: reply sozinho nao ativa o bot.
+- `REI_ALLOW_ACTIVE_CONVERSATION=false`: janela de conversa ativa fica desligada para evitar resposta sem chamada.
 
 Ele tambem entende frases naturais de preferencia, como `sem zoeira`, `pode zoar`, `fala serio`, `para de me chamar assim` e `me chama de...`, salvando isso na memoria segmentada do usuario.
 
-Essas frases so disparam resposta quando o bot for chamado ou quando forem parte de um fluxo ativo.
+Essas frases so disparam resposta quando o bot for chamado pelo nome ou por mencao direta.
 
 ## Membros Do Servidor
 
@@ -259,6 +260,8 @@ LOCAL_REPLIES_CALL_AI_ONLY_WHEN_NEEDED=true
 ```
 
 ## Comandos
+
+Como o bot agora so responde quando e chamado, use comandos assim: `goku status`, `goku ajuda`, `goku memoria status`, ou mencione o bot antes do comando.
 
 - `!ajuda` mostra os comandos.
 - `!ping` testa a latencia.

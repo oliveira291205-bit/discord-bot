@@ -273,11 +273,6 @@ class ReiSuzukawaBot(commands.Bot):
             self.save_attachment_memory(message, attachment_analyses)
         self.observe_message_memory(message)
 
-        ctx = await self.get_context(message)
-        if ctx.valid:
-            await self.invoke(ctx)
-            return
-
         context = self.memory_service.context_from_message(message)
         activation = should_respond_to_message(
             message,
@@ -286,6 +281,12 @@ class ReiSuzukawaBot(commands.Bot):
             active_conversations=self.active_conversations,
         )
         if not activation.should_respond:
+            return
+
+        ctx = await self.get_context(message)
+        if ctx.valid:
+            await self.invoke(ctx)
+            self.record_active_conversation(message)
             return
 
         if detect_resenha_trigger(message.content):
@@ -839,7 +840,8 @@ class ReiCommands(commands.Cog):
         prefix = self.bot.settings.prefix
         text = (
             "Eu sou o Goku.\n"
-            "Eu respondo quando voce fala `goku`, `cacaroto`, `kakaroto`, quando me menciona ou quando responde uma mensagem minha.\n\n"
+            "Eu so respondo quando voce fala `goku`, `cacaroto`, `kakaroto` ou quando me menciona diretamente.\n\n"
+            "Comandos tambem precisam vir com meu nome ou mencao. Exemplo: `goku status`.\n"
             f"`{prefix}ping` - testa se estou vivo.\n"
             f"`{prefix}status` - mostra meu estado.\n"
             f"`{prefix}perguntar texto` - pergunta direto para a DeepSeek.\n"

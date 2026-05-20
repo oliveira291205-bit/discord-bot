@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -45,7 +46,7 @@ class ActivationTests(unittest.TestCase):
         )
         self.assertTrue(should_respond_to_message(message, bot_user=bot, config=WakeWordConfig()).should_respond)
 
-    def test_reply_to_bot_activates(self) -> None:
+    def test_reply_to_bot_stays_quiet_by_default(self) -> None:
         bot = SimpleNamespace(id=99)
         replied = SimpleNamespace(author=bot)
         message = SimpleNamespace(
@@ -55,7 +56,18 @@ class ActivationTests(unittest.TestCase):
             author=SimpleNamespace(id=2),
             reference=SimpleNamespace(resolved=replied),
         )
-        self.assertTrue(should_respond_to_message(message, bot_user=bot, config=WakeWordConfig()).should_respond)
+        self.assertFalse(should_respond_to_message(message, bot_user=bot, config=WakeWordConfig()).should_respond)
+
+    def test_env_cannot_reenable_reply_or_active_conversation(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"REI_ALLOW_REPLY_TO_BOT": "true", "REI_ALLOW_ACTIVE_CONVERSATION": "true"},
+            clear=False,
+        ):
+            config = WakeWordConfig.from_env()
+
+        self.assertFalse(config.allow_reply_to_bot)
+        self.assertFalse(config.allow_active_conversation_window)
 
 
 class MemberDirectoryTests(unittest.TestCase):

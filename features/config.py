@@ -29,8 +29,8 @@ WAKE_WORD_CONFIG = {
     "names": ["goku", "cacaroto", "kakaroto"],
     "require_wake_word_for_natural_replies": True,
     "allow_direct_mention": True,
-    "allow_reply_to_bot": True,
-    "allow_active_conversation_window": True,
+    "allow_reply_to_bot": False,
+    "allow_active_conversation_window": False,
     "active_conversation_seconds": 120,
 }
 
@@ -111,8 +111,8 @@ class WakeWordConfig:
     names: tuple[str, ...] = ("goku", "cacaroto", "kakaroto")
     require_wake_word_for_natural_replies: bool = True
     allow_direct_mention: bool = True
-    allow_reply_to_bot: bool = True
-    allow_active_conversation_window: bool = True
+    allow_reply_to_bot: bool = False
+    allow_active_conversation_window: bool = False
     active_conversation_seconds: int = 120
 
     @classmethod
@@ -127,11 +127,8 @@ class WakeWordConfig:
                 WAKE_WORD_CONFIG["require_wake_word_for_natural_replies"],
             ),
             allow_direct_mention=_as_bool("REI_ALLOW_DIRECT_MENTION", WAKE_WORD_CONFIG["allow_direct_mention"]),
-            allow_reply_to_bot=_as_bool("REI_ALLOW_REPLY_TO_BOT", WAKE_WORD_CONFIG["allow_reply_to_bot"]),
-            allow_active_conversation_window=_as_bool(
-                "REI_ALLOW_ACTIVE_CONVERSATION",
-                WAKE_WORD_CONFIG["allow_active_conversation_window"],
-            ),
+            allow_reply_to_bot=False,
+            allow_active_conversation_window=False,
             active_conversation_seconds=_as_int(
                 "REI_ACTIVE_CONVERSATION_SECONDS",
                 WAKE_WORD_CONFIG["active_conversation_seconds"],
