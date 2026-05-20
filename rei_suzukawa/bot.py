@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 if __package__:
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
     from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.code_reader import list_code_files, read_code_file, summarize_codebase
     from features.error_detector import detect_error_reply
     from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
     from features.status import BotStatusInfo, render_status, wants_status
@@ -53,6 +54,7 @@ else:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
     from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.code_reader import list_code_files, read_code_file, summarize_codebase
     from features.error_detector import detect_error_reply
     from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
     from features.status import BotStatusInfo, render_status, wants_status
@@ -729,6 +731,7 @@ class ReiCommands(commands.Cog):
             f"`{prefix}resumo` - resumo da conversa recente comigo.\n"
             f"`{prefix}resenha` - averigua a resenha do canal.\n"
             f"`{prefix}anexos` - explica quais fotos, PDFs e arquivos eu consigo ler.\n"
+            f"`{prefix}codigo` - le meu proprio codigo em modo seguro, sem editar nada.\n"
             f"`{prefix}chamar @usuario assunto` - marca alguem e puxa assunto.\n"
             f"`{prefix}lembrar texto` - salva uma memoria local no SQLite.\n"
             f"`{prefix}memorias` - lista suas memorias locais recentes.\n"
@@ -863,6 +866,40 @@ class ReiCommands(commands.Cog):
             "Se a foto nao tiver texto legivel, eu guardo o link e os metadados, mas nao invento o que tem nela."
         )
         await ctx.reply(text, mention_author=False)
+
+    @commands.group(name="codigo", aliases=["code", "fonte"], invoke_without_command=True)
+    async def codigo(self, ctx: commands.Context[ReiSuzukawaBot]) -> None:
+        prefix = self.bot.settings.prefix
+        text = (
+            f"{summarize_codebase(project_root())}\n\n"
+            f"Use `{prefix}codigo listar` para ver arquivos ou "
+            f"`{prefix}codigo arquivo rei_suzukawa/bot.py` para eu ler um arquivo seguro."
+        )
+        await ctx.reply(text[:1900], mention_author=False)
+
+    @codigo.command(name="listar", aliases=["lista", "ls"])
+    async def codigo_listar(self, ctx: commands.Context[ReiSuzukawaBot]) -> None:
+        files = list_code_files(project_root(), limit=80)
+        if not files:
+            await ctx.reply("Nao achei arquivos de codigo seguros para listar.", mention_author=False)
+            return
+        text = "Arquivos que eu posso ler com seguranca:\n" + "\n".join(f"- `{path}`" for path in files)
+        await send_long_reply(ctx.message, text)
+
+    @codigo.command(name="arquivo", aliases=["ler", "cat", "ver"])
+    async def codigo_arquivo(self, ctx: commands.Context[ReiSuzukawaBot], *, path: str = "") -> None:
+        result = read_code_file(project_root(), path)
+        if not result.ok:
+            await ctx.reply(result.content, mention_author=False)
+            return
+
+        header = f"Arquivo `{result.path}` lido em modo somente leitura:"
+        await send_long_reply(ctx.message, f"{header}\n```text\n{result.content[:1800]}\n```")
+        remaining = result.content[1800:]
+        while remaining:
+            chunk = remaining[:1800]
+            remaining = remaining[1800:]
+            await ctx.channel.send(f"```text\n{chunk}\n```")
 
     @commands.command(name="chamar", aliases=["puxar", "marcar", "conversar"])
     async def chamar(self, ctx: commands.Context[ReiSuzukawaBot], *, text: str = "") -> None:
@@ -1115,6 +1152,10 @@ def append_xp_message(text: str, event: object | None) -> str:
     if not message:
         return text
     return f"{text}\n\n{message}"
+
+
+def project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
 
 
 def _as_int(env_name: str, default: int) -> int:

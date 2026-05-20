@@ -144,6 +144,18 @@ o bot ta online?
 
 Mostra apenas estado seguro: DeepSeek configurado ou nao, SQLite, OCR/Tesseract, ambiente, uptime e versao do Python. Tokens nunca sao exibidos.
 
+## Leitura Do Proprio Codigo
+
+O Goku sabe que e um bot de Discord feito em Python e brinca que talvez esteja vivo. Ele tambem consegue ler o proprio codigo em modo seguro, mas nao tem comandos para editar, apagar, sobrescrever ou reparar arquivos sozinho.
+
+Comandos:
+
+- `!codigo` mostra um mapa curto do projeto.
+- `!codigo listar` lista arquivos seguros.
+- `!codigo arquivo rei_suzukawa/bot.py` mostra um arquivo em modo somente leitura.
+
+Por seguranca, a leitura bloqueia `.env`, bancos SQLite, logs, imagens, PDFs, caches, venv, `.git` e caminhos que tentem sair da pasta do projeto.
+
 ## XP E Conquistas
 
 O XP usa o mesmo SQLite local (`data/memory.sqlite3`) e cria as tabelas `user_xp` e `user_achievements`.
@@ -192,6 +204,7 @@ LOCAL_REPLIES_CALL_AI_ONLY_WHEN_NEEDED=true
 - `!resumo` resume conversa recente.
 - `!resenha` gera resenha do historico recente do canal.
 - `!anexos` explica leitura de fotos, PDFs e arquivos.
+- `!codigo` mostra/le arquivos seguros do proprio projeto sem editar nada.
 - `!chamar @usuario assunto` marca alguem e puxa assunto.
 - `!lembrar texto` salva memoria manual no SQLite.
 - `!memorias` mostra suas memorias.
