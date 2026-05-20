@@ -37,7 +37,16 @@ def check_sqlite() -> None:
 
 
 def check_imports() -> None:
-    for module in ("discord", "httpx", "pypdf", "PIL", "pytesseract"):
+    for module in (
+        "discord",
+        "httpx",
+        "pypdf",
+        "PIL",
+        "pytesseract",
+        "features.member_index",
+        "features.gif_reactions",
+        "features.activation",
+    ):
         try:
             __import__(module)
             print(f"[check] import {module}: OK")

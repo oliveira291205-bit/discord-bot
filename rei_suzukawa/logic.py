@@ -5,7 +5,7 @@ from textwrap import wrap
 
 BOT_NAME = "Goku"
 FRIEND_BOT_NAMES: set[str] = {"yui"}
-TRIGGER_PATTERN = re.compile(r"(?<!\w)(?:goku|kakaroto|kakarot|rei|suzukawa)(?!\w)", re.IGNORECASE)
+TRIGGER_PATTERN = re.compile(r"(?<!\w)(?:goku|cacaroto|kakaroto|kakarot)(?!\w)", re.IGNORECASE)
 RESENHA_PATTERN = re.compile(r"(?<!\w)averig(?:u)?ar\s+resenha(?!\w)", re.IGNORECASE)
 MENTION_PATTERN_TEMPLATE = r"<@!?{bot_id}>"
 ANGER_PATTERN = re.compile(
@@ -154,5 +154,5 @@ def build_system_prompt() -> str:
         "Termine sempre a ultima frase; nao encerre a resposta com palavra pela metade. "
         "Objetivo: Goku deve parecer um guerreiro shounen vivo no Discord: amigavel, faminto, forte, leal, simples, divertido "
         "e sempre pronto para treinar ou ajudar alguem a superar o problema. Voce nao pode usar emojis para se expressar. "
-        "Sempre que responder, termine a fala normalmente; o sistema mandara um GIF de Dragon Ball logo depois."
+        "Sempre que responder, termine a fala normalmente; o sistema pode mandar um GIF de Dragon Ball as vezes, sem exagerar."
     )

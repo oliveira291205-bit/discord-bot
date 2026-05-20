@@ -19,10 +19,13 @@ from dotenv import load_dotenv
 
 if __package__:
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
-    from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.activation import ActivationDecision, should_respond_to_message
+    from features.config import FunConfig, GifConfig, LocalReplyConfig, WakeWordConfig, XPConfig
     from features.code_reader import list_code_files, read_code_file, summarize_codebase
     from features.error_detector import detect_error_reply
+    from features.gif_reactions import GifReactionManager
     from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
+    from features.member_index import MemberDirectory, extract_member_request
     from features.status import BotStatusInfo, render_status, wants_status
     from features.xp import XPService
     from memory.memory_commands import MemoryCommands
@@ -53,10 +56,13 @@ if __package__:
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from ai.deepseek_prompt_limiter import PromptBudgetConfig, PromptBudgetManager, PromptTooLargeError
-    from features.config import FunConfig, LocalReplyConfig, XPConfig
+    from features.activation import ActivationDecision, should_respond_to_message
+    from features.config import FunConfig, GifConfig, LocalReplyConfig, WakeWordConfig, XPConfig
     from features.code_reader import list_code_files, read_code_file, summarize_codebase
     from features.error_detector import detect_error_reply
+    from features.gif_reactions import GifReactionManager
     from features.local_replies import LocalReplyEngine, is_study_or_programming, needs_teacher_mode
+    from features.member_index import MemberDirectory, extract_member_request
     from features.status import BotStatusInfo, render_status, wants_status
     from features.xp import XPService
     from memory.memory_commands import MemoryCommands
@@ -139,6 +145,8 @@ class BotSettings:
     fun: FunConfig
     xp: XPConfig
     local_replies: LocalReplyConfig
+    wake_words: WakeWordConfig
+    gifs: GifConfig
     prompt_budget: PromptBudgetConfig
     auto_memory_enabled: bool
     observe_all_messages: bool
@@ -152,6 +160,7 @@ class BotSettings:
     @classmethod
     def from_env(cls) -> "BotSettings":
         load_dotenv()
+        gifs = GifConfig.from_env()
         return cls(
             discord_token=os.getenv("DISCORD_TOKEN", "").strip(),
             prefix=os.getenv("REI_PREFIX", "!").strip() or "!",
@@ -161,13 +170,15 @@ class BotSettings:
             fun=FunConfig.from_env(),
             xp=XPConfig.from_env(),
             local_replies=LocalReplyConfig.from_env(),
+            wake_words=WakeWordConfig.from_env(),
+            gifs=gifs,
             prompt_budget=PromptBudgetConfig.from_env(),
             auto_memory_enabled=_as_bool("REI_AUTO_MEMORY", True),
             observe_all_messages=_as_bool("REI_OBSERVE_ALL_MESSAGES", True),
             resenha_history_limit=_as_int("REI_RESENHA_LIMIT", 250),
             attachment_max_bytes=_as_int("REI_ATTACHMENT_MAX_BYTES", 8 * 1024 * 1024),
-            gifs_enabled=_as_bool("REI_GIFS_ENABLED", True),
-            gif_cooldown_seconds=_as_int("REI_GIF_COOLDOWN_SECONDS", 600),
+            gifs_enabled=gifs.enabled,
+            gif_cooldown_seconds=gifs.cooldown_seconds,
             gif_search=GifSearchSettings(limit=_as_int("REI_GIF_SEARCH_LIMIT", 12)),
             deepseek=DeepSeekSettings(
                 api_key=os.getenv("DEEPSEEK_API_KEY", "").strip(),
@@ -184,9 +195,10 @@ class ReiSuzukawaBot(commands.Bot):
         intents.message_content = True
         intents.messages = True
         intents.guilds = True
+        intents.members = True
 
         super().__init__(
-            command_prefix=commands.when_mentioned_or(settings.prefix, "goku ", "kakaroto ", "kakarot ", "rei ", "suzukawa "),
+            command_prefix=commands.when_mentioned_or(settings.prefix, "goku ", "cacaroto ", "kakaroto ", "kakarot "),
             intents=intents,
             case_insensitive=True,
             help_command=None,
@@ -196,7 +208,9 @@ class ReiSuzukawaBot(commands.Bot):
         self.deepseek = DeepSeekClient(settings.deepseek)
         self.memory_service = MemoryService(settings.memory)
         self.xp_service = XPService(settings.memory.sqlite_path, settings.xp)
+        self.member_directory = MemberDirectory(settings.memory.sqlite_path)
         self.local_replies = LocalReplyEngine(enabled=settings.local_replies.enabled)
+        self.gif_reactions = GifReactionManager(settings.gifs)
         self.natural_interactions = NaturalInteractionManager(settings.natural_interactions)
         self.prompt_budget = PromptBudgetManager(settings.prompt_budget)
         self.started_at = time.monotonic()
@@ -207,6 +221,7 @@ class ReiSuzukawaBot(commands.Bot):
         self.last_gif_by_channel: dict[int, float] = {}
         self.last_gif_url_by_channel: dict[int, str] = {}
         self.attachment_cache: dict[int, list[AttachmentAnalysis]] = {}
+        self.active_conversations: dict[tuple[int, int], float] = {}
 
     async def setup_hook(self) -> None:
         await self.add_cog(ReiCommands(self))
@@ -214,6 +229,7 @@ class ReiSuzukawaBot(commands.Bot):
 
     async def close(self) -> None:
         self.xp_service.close()
+        self.member_directory.close()
         self.memory_service.close()
         await super().close()
 
@@ -221,6 +237,26 @@ class ReiSuzukawaBot(commands.Bot):
         user = self.user or BOT_NAME
         LOGGER.info("%s esta online como %s", BOT_NAME, user)
         await self.change_presence(activity=discord.Game(name="diga goku ou kakaroto"))
+        try:
+            result = await self.member_directory.sync_all_guilds(self)
+            LOGGER.info("Membros sincronizados: %s", result)
+        except Exception:
+            LOGGER.exception("Falha sincronizando membros no inicio")
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        self.member_directory.upsert_member(str(member.guild.id), member)
+
+    async def on_member_remove(self, member: discord.Member) -> None:
+        self.member_directory.mark_member_inactive(str(member.guild.id), str(member.id))
+
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        self.member_directory.upsert_member(str(after.guild.id), after)
+
+    async def on_user_update(self, before: discord.User, after: discord.User) -> None:
+        for guild in self.guilds:
+            member = guild.get_member(after.id)
+            if member:
+                self.member_directory.upsert_member(str(guild.id), member)
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot and not is_friend_bot_name(message.author.display_name):
@@ -237,18 +273,34 @@ class ReiSuzukawaBot(commands.Bot):
             self.save_attachment_memory(message, attachment_analyses)
         self.observe_message_memory(message)
 
-        if detect_resenha_trigger(message.content):
-            async with message.channel.typing():
-                answer = await self.generate_channel_resenha(message)
-            await self.send_ai_reply(message, answer)
-            return
-
         ctx = await self.get_context(message)
         if ctx.valid:
             await self.invoke(ctx)
             return
 
         context = self.memory_service.context_from_message(message)
+        activation = should_respond_to_message(
+            message,
+            bot_user=self.user,
+            config=self.settings.wake_words,
+            active_conversations=self.active_conversations,
+        )
+        if not activation.should_respond:
+            return
+
+        if detect_resenha_trigger(message.content):
+            async with message.channel.typing():
+                answer = await self.generate_channel_resenha(message)
+            await self.send_ai_reply(message, answer)
+            self.record_active_conversation(message)
+            return
+
+        member_answer = await self.handle_member_directory_request(message, activation)
+        if member_answer:
+            await self.send_text_reply_with_gif(message, member_answer, query=message.content)
+            self.record_active_conversation(message)
+            return
+
         xp_event = self.xp_service.award(
             user_id=context.user_id,
             guild_id=context.guild_id,
@@ -266,12 +318,13 @@ class ReiSuzukawaBot(commands.Bot):
                 message,
                 append_xp_message(error_hint.reply, event or xp_event),
                 query=message.content,
-                force=True,
             )
+            self.record_active_conversation(message)
             return
 
         if wants_status(message.content):
-            await self.send_text_reply_with_gif(message, self.render_bot_status(), query=message.content, force=True)
+            await self.send_text_reply_with_gif(message, self.render_bot_status(), query=message.content)
+            self.record_active_conversation(message)
             return
 
         natural_answer = self.natural_interactions.maybe_handle_lore_confirmation(
@@ -280,7 +333,8 @@ class ReiSuzukawaBot(commands.Bot):
             memory_service=self.memory_service,
         )
         if natural_answer:
-            await self.send_text_reply_with_gif(message, natural_answer, query=message.content, force=True)
+            await self.send_text_reply_with_gif(message, natural_answer, query=message.content)
+            self.record_active_conversation(message)
             return
 
         natural_answer = self.memory_service.handle_natural_memory_command(
@@ -288,7 +342,8 @@ class ReiSuzukawaBot(commands.Bot):
             text=message.content,
         )
         if natural_answer:
-            await self.send_text_reply_with_gif(message, natural_answer, query=message.content, force=True)
+            await self.send_text_reply_with_gif(message, natural_answer, query=message.content)
+            self.record_active_conversation(message)
             return
 
         natural_answer = self.natural_interactions.handle_preference_signal(
@@ -297,14 +352,15 @@ class ReiSuzukawaBot(commands.Bot):
             memory_service=self.memory_service,
         )
         if natural_answer:
-            await self.send_text_reply_with_gif(message, natural_answer, query=message.content, force=True)
+            await self.send_text_reply_with_gif(message, natural_answer, query=message.content)
+            self.record_active_conversation(message)
             return
 
         bot_id = self.user.id if self.user else None
-        was_mentioned = bool(self.user and self.user in message.mentions)
+        was_mentioned = activation.reason == "mention"
         triggered = detect_trigger(message.content)
         local_reply = self.local_replies.generate(
-            clean_user_prompt(message.content, bot_id) if (was_mentioned or triggered) else message.content,
+            clean_user_prompt(message.content, bot_id) if (was_mentioned or triggered) else activation.cleaned_content,
             direct=was_mentioned or triggered,
         )
         if local_reply and (was_mentioned or triggered):
@@ -317,31 +373,11 @@ class ReiSuzukawaBot(commands.Bot):
                 message,
                 append_xp_message(local_reply.text, event or xp_event),
                 query=message.content,
-                force=True,
             )
+            self.record_active_conversation(message)
             return
 
-        if not (was_mentioned or triggered):
-            decision = self.natural_interactions.should_interact_naturally(
-                message=message,
-                context=context,
-                was_mentioned=was_mentioned,
-                triggered=triggered,
-                is_command=False,
-                memory_service=self.memory_service,
-            )
-            if decision.should_reply:
-                reply = self.natural_interactions.generate_natural_interaction(
-                    message=message,
-                    context=context,
-                    memory_service=self.memory_service,
-                )
-                if reply:
-                    await self.send_text_reply_with_gif(message, reply, query=message.content, force=True)
-                    self.natural_interactions.record_reply(context.channel_id)
-            return
-
-        prompt = clean_user_prompt(message.content, bot_id)
+        prompt = activation.cleaned_content or clean_user_prompt(message.content, bot_id)
         if not prompt:
             prompt = "Me chamaram. Puxe assunto com naturalidade."
         if needs_teacher_mode(prompt):
@@ -355,9 +391,10 @@ class ReiSuzukawaBot(commands.Bot):
             answer = await self.ask_deepseek(message, prompt, attachment_analyses=attachment_analyses)
 
         await self.send_ai_reply(message, answer)
+        self.record_active_conversation(message)
 
         if xp_event and xp_event.message:
-            await self.send_text_reply_with_gif(message, xp_event.message, query=message.content, force=True)
+            await self.send_text_reply_with_gif(message, xp_event.message, query=message.content)
 
     async def ask_deepseek(
         self,
@@ -487,6 +524,60 @@ class ReiSuzukawaBot(commands.Bot):
                 started_at=self.started_at,
             )
         )
+
+    def record_active_conversation(self, message: discord.Message) -> None:
+        channel_id = int(getattr(message.channel, "id", 0) or 0)
+        user_id = int(getattr(message.author, "id", 0) or 0)
+        if channel_id and user_id:
+            self.active_conversations[(channel_id, user_id)] = time.monotonic()
+
+    async def handle_member_directory_request(
+        self,
+        message: discord.Message,
+        activation: ActivationDecision,
+    ) -> str | None:
+        if not message.guild:
+            return None
+        clean = activation.cleaned_content or message.content
+        lowered = clean.lower()
+        if re.search(r"\b(atualiza|sincroniza|recarrega|aprende)\b.*\b(membros|servidor)\b", lowered):
+            if not has_member_admin_permission(message.author):
+                return "Isso precisa de permissao de administrador ou moderador."
+            count = await self.member_directory.sync_guild_members(message.guild)
+            return f"Sincronizei {count} membros deste servidor. Agora consigo marcar pessoas pelo nome com mais precisao."
+
+        if re.search(r"\b(status|quantos|conhece)\b.*\b(membros|servidor|quem)\b", lowered):
+            count = self.member_directory.count_members(str(message.guild.id))
+            last_sync = self.member_directory.last_sync(str(message.guild.id)) or "nunca"
+            members_intent = bool(getattr(self.intents, "members", False))
+            return (
+                "Status dos membros:\n"
+                f"- conhecidos no SQLite: `{count}`\n"
+                f"- ultima sincronizacao: `{last_sync}`\n"
+                f"- Server Members Intent no codigo: `{members_intent}`"
+            )
+
+        request = extract_member_request(clean)
+        if request is None:
+            return None
+        target, tail = request
+        if tail == "blocked":
+            return "Nao vou marcar todo mundo. Posso chamar uma pessoa especifica."
+        resolution = self.member_directory.resolve_member(str(message.guild.id), target)
+        if resolution.status == "blocked":
+            return "Nao vou marcar todo mundo. Posso chamar uma pessoa especifica."
+        if resolution.status == "not_found" or not resolution.member:
+            return "Nao achei esse membro no cache. Pede pra um admin falar `Goku, atualiza os membros`."
+        if resolution.status == "ambiguous":
+            options = []
+            for index, member in enumerate(resolution.matches[:5], start=1):
+                username = f"@{member.username}" if member.username else member.user_id
+                options.append(f"{index}. {member.label} ({username})")
+            return "Encontrei mais de uma pessoa parecida. Qual delas?\n" + "\n".join(options)
+
+        member = resolution.member
+        message_text = build_member_call_text(message.author.display_name, tail)
+        return f"{member.mention or f'<@{member.user_id}>'}, {message_text}"
 
     async def generate_channel_resenha(self, message: discord.Message) -> str:
         try:
@@ -641,7 +732,7 @@ class ReiSuzukawaBot(commands.Bot):
             message.channel,
             theme,
             query=f"{message.content} {clean_answer}",
-            force=True,
+            user_id=message.author.id,
         )
 
     async def send_text_reply_with_gif(
@@ -650,13 +741,14 @@ class ReiSuzukawaBot(commands.Bot):
         text: str,
         *,
         query: str = "",
-        force: bool = True,
+        force: bool = False,
     ) -> None:
         await send_long_reply(message, text)
         await self.maybe_send_gif(
             message.channel,
             infer_gif_theme(f"{query} {text}"),
             query=f"{query} {text}",
+            user_id=message.author.id,
             force=force,
         )
 
@@ -666,6 +758,7 @@ class ReiSuzukawaBot(commands.Bot):
         theme: str | None,
         *,
         query: str = "",
+        user_id: int = 0,
         force: bool = False,
     ) -> None:
         if not theme or not self.settings.gifs_enabled:
@@ -676,6 +769,20 @@ class ReiSuzukawaBot(commands.Bot):
             return
 
         channel_id = getattr(channel, "id", 0)
+        if not self.gif_reactions.should_send_gif(
+            channel_id=channel_id,
+            user_id=user_id,
+            text=query,
+            force=force,
+        ):
+            return
+        if self.settings.gifs.use_local_gif_pool:
+            local_url = self.gif_reactions.select_gif_for_context(query, channel_id=channel_id)
+            if local_url:
+                await self.maybe_send_gif_url(channel, local_url, user_id=user_id, force=True)
+                return
+        if not self.settings.gifs.use_external_gif_api:
+            return
         last_url = self.last_gif_url_by_channel.get(channel_id)
         search_query = build_gif_search_query(normalized_theme, query)
         try:
@@ -694,9 +801,16 @@ class ReiSuzukawaBot(commands.Bot):
         if not url:
             return
 
-        await self.maybe_send_gif_url(channel, url, force=force)
+        await self.maybe_send_gif_url(channel, url, user_id=user_id, force=True)
 
-    async def maybe_send_gif_url(self, channel: discord.abc.Messageable, url: str, *, force: bool = False) -> None:
+    async def maybe_send_gif_url(
+        self,
+        channel: discord.abc.Messageable,
+        url: str,
+        *,
+        user_id: int = 0,
+        force: bool = False,
+    ) -> None:
         if not self.settings.gifs_enabled:
             return
         if not is_direct_gif_url(url):
@@ -712,6 +826,7 @@ class ReiSuzukawaBot(commands.Bot):
 
         self.last_gif_by_channel[channel_id] = now
         self.last_gif_url_by_channel[channel_id] = url
+        self.gif_reactions.record(channel_id=channel_id, user_id=user_id, url=url, now=now)
         await channel.send(url)
 
 
@@ -724,7 +839,7 @@ class ReiCommands(commands.Cog):
         prefix = self.bot.settings.prefix
         text = (
             "Eu sou o Goku.\n"
-            "Eu respondo quando voce fala `goku`, `kakaroto`, `rei`, `suzukawa` ou quando me menciona.\n\n"
+            "Eu respondo quando voce fala `goku`, `cacaroto`, `kakaroto`, quando me menciona ou quando responde uma mensagem minha.\n\n"
             f"`{prefix}ping` - testa se estou vivo.\n"
             f"`{prefix}status` - mostra meu estado.\n"
             f"`{prefix}perguntar texto` - pergunta direto para a DeepSeek.\n"
@@ -919,7 +1034,13 @@ class ReiCommands(commands.Cog):
             answer = await self.bot.generate_user_starter(ctx.message, target, subject)
         answer, gif_theme = strip_gif_marker(answer)
         await ctx.send(answer, allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False))
-        await self.bot.maybe_send_gif(ctx.channel, gif_theme, query=subject, force=detect_gif_request(subject))
+        await self.bot.maybe_send_gif(
+            ctx.channel,
+            gif_theme,
+            query=subject,
+            user_id=ctx.author.id,
+            force=detect_gif_request(subject),
+        )
 
     @commands.group(name="cerebro", aliases=["brain"], invoke_without_command=True)
     async def cerebro(self, ctx: commands.Context[ReiSuzukawaBot]) -> None:
@@ -1152,6 +1273,25 @@ def append_xp_message(text: str, event: object | None) -> str:
     if not message:
         return text
     return f"{text}\n\n{message}"
+
+
+def has_member_admin_permission(author: object) -> bool:
+    permissions = getattr(author, "guild_permissions", None)
+    if permissions is None:
+        return False
+    return bool(
+        getattr(permissions, "administrator", False)
+        or getattr(permissions, "manage_guild", False)
+        or getattr(permissions, "moderate_members", False)
+    )
+
+
+def build_member_call_text(author_name: str, tail: str) -> str:
+    clean = " ".join((tail or "").split()).strip()
+    clean = re.sub(r"^(e\s+)?(fala|diz|avisa|mande|manda)\s+(que|pra|para)?\s*", "", clean, flags=re.IGNORECASE).strip()
+    if clean:
+        return clean[:240]
+    return f"{author_name} pediu pra te chamar."
 
 
 def project_root() -> Path:

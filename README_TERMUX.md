@@ -59,6 +59,17 @@ O instalador vai:
 - pedir suas keys no terminal;
 - deixar `run_bot.sh` executavel.
 
+## 3.1. Ativar Intents No Discord
+
+No Discord Developer Portal, abra seu aplicativo e va em `Bot`.
+
+Ative:
+
+- `MESSAGE CONTENT INTENT`
+- `SERVER MEMBERS INTENT`
+
+Sem `SERVER MEMBERS INTENT`, o Goku ainda roda, mas pode nao conseguir aprender todos os membros do servidor para marcar pessoas pelo nome.
+
 ## 4. Colar As Keys
 
 Quando o script pedir:
@@ -191,6 +202,21 @@ ou:
 ```bash
 python termux_check.py
 ```
+
+Para conferir membros depois que o bot estiver online no Discord:
+
+```text
+Goku, atualiza os membros
+Goku, status dos membros
+```
+
+Para testar mencao por nome:
+
+```text
+Goku, marca o nome_da_pessoa
+```
+
+O bot resolve localmente pelo SQLite e nao manda lista gigante de membros para a DeepSeek.
 
 Se aparecer `tesseract: FALTANDO`, rode:
 

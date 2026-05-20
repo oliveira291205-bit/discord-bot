@@ -15,8 +15,9 @@ class TriggerTests(unittest.TestCase):
     def test_detects_wake_words(self) -> None:
         self.assertTrue(detect_trigger("fala goku"))
         self.assertTrue(detect_trigger("kakaroto resolve isso"))
-        self.assertTrue(detect_trigger("fala rei"))
-        self.assertTrue(detect_trigger("Suzukawa resolve isso"))
+        self.assertTrue(detect_trigger("fala cacaroto"))
+        self.assertFalse(detect_trigger("fala rei"))
+        self.assertFalse(detect_trigger("Suzukawa resolve isso"))
 
     def test_does_not_detect_inside_other_words(self) -> None:
         self.assertFalse(detect_trigger("reinado"))
@@ -24,7 +25,7 @@ class TriggerTests(unittest.TestCase):
         self.assertFalse(detect_trigger("gokuzinho"))
 
     def test_clean_user_prompt_removes_trigger_and_mention(self) -> None:
-        self.assertEqual(clean_user_prompt("<@123> rei me ajuda", 123), "me ajuda")
+        self.assertEqual(clean_user_prompt("<@123> cacaroto me ajuda", 123), "me ajuda")
         self.assertEqual(clean_user_prompt("<@!123> goku ping", 123), "ping")
 
     def test_detects_resenha_trigger(self) -> None:

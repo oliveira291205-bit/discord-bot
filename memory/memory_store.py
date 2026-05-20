@@ -59,6 +59,19 @@ class SQLiteMemoryStore:
             CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
             CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
             CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(is_active);
+
+            CREATE TABLE IF NOT EXISTS recent_channel_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                author_display_name TEXT,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_recent_messages_message_id ON recent_channel_messages(message_id);
+            CREATE INDEX IF NOT EXISTS idx_recent_messages_channel ON recent_channel_messages(guild_id, channel_id, id);
             """
         )
         if use_fts5:
@@ -366,6 +379,51 @@ class SQLiteMemoryStore:
     def count_all(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) AS count FROM memories WHERE is_active=1").fetchone()
         return int(row["count"] if row else 0)
+
+    def add_recent_channel_message(
+        self,
+        *,
+        guild_id: str,
+        channel_id: str,
+        user_id: str,
+        message_id: str,
+        author_display_name: str,
+        content: str,
+        created_at: str,
+        max_per_channel: int = 50,
+    ) -> None:
+        if not guild_id or not channel_id or not user_id or not message_id or not content.strip():
+            return
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO recent_channel_messages (
+                guild_id, channel_id, user_id, message_id, author_display_name, content, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (guild_id, channel_id, user_id, message_id, author_display_name, content, created_at),
+        )
+        self.conn.execute(
+            """
+            DELETE FROM recent_channel_messages
+            WHERE guild_id=? AND channel_id=? AND id NOT IN (
+                SELECT id FROM recent_channel_messages
+                WHERE guild_id=? AND channel_id=?
+                ORDER BY id DESC LIMIT ?
+            )
+            """,
+            (guild_id, channel_id, guild_id, channel_id, max_per_channel),
+        )
+        self.conn.commit()
+
+    def list_recent_channel_messages(self, *, guild_id: str, channel_id: str, limit: int = 10) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT * FROM recent_channel_messages
+            WHERE guild_id=? AND channel_id=?
+            ORDER BY id DESC LIMIT ?
+            """,
+            (guild_id, channel_id, limit),
+        ).fetchall()
 
     def mark_used(self, ids: Iterable[int]) -> None:
         ids = list(ids)

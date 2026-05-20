@@ -1,6 +1,6 @@
 # Goku
 
-Bot de Discord feito com `discord.py` e DeepSeek. Ele responde quando alguem menciona o bot, escreve `goku`, `kakaroto`, `rei`, `suzukawa`, usa comandos administrativos, ou quando a conversa pede uma reacao natural curta.
+Bot de Discord feito com `discord.py` e DeepSeek. Ele responde quando alguem menciona o bot, escreve `goku`, `cacaroto` ou `kakaroto`, usa comandos administrativos, ou continua um fluxo recente iniciado com ele.
 
 ## Como Rodar
 
@@ -15,7 +15,7 @@ Ou manualmente:
 .venv/bin/python -m rei_suzukawa.bot
 ```
 
-No Discord Developer Portal, mantenha `Message Content Intent` ativado.
+No Discord Developer Portal, mantenha `MESSAGE CONTENT INTENT` e `SERVER MEMBERS INTENT` ativados. Sem `SERVER MEMBERS INTENT`, o bot pode nao conseguir sincronizar todos os membros para marcar pelo ID real.
 
 ## Rodar No Termux
 
@@ -106,7 +106,15 @@ REI_MEMORY_ENABLED=false
 
 ## Interacoes Naturais
 
-O Goku nao depende de prefixo para pequenas reacoes sociais. Ele observa o contexto e pode comentar raramente quando detectar bug, conquista, estudo, meme, lore ou piada interna. Essas respostas usam templates locais por padrao, entao nao gastam DeepSeek para cada brincadeira.
+O Goku nao entra mais em conversas soltas. Ele so responde quando alguem chama `Goku`, `Cacaroto` ou `Kakaroto`, menciona o bot diretamente, responde uma mensagem dele, ou continua um fluxo recente dentro da janela configurada.
+
+Exemplos:
+
+- `fala serio`: fica quieto.
+- `Goku, fala serio`: responde.
+- `Cacaroto, marca o Cauã`: tenta resolver o membro localmente e menciona o ID real.
+
+As respostas sociais usam templates locais por padrao, entao nao gastam DeepSeek para cada brincadeira.
 
 Controles principais:
 
@@ -116,8 +124,63 @@ Controles principais:
 - `REI_NATURAL_MAX_PER_CHANNEL_HOUR=3`: limite por canal por hora.
 - `REI_NATURAL_AVOID_SERIOUS=true`: evita interromper canais/assuntos serios.
 - `REI_NATURAL_USE_AI=false`: respostas espontaneas nao chamam DeepSeek por padrao.
+- `REI_WAKE_WORDS=goku,cacaroto,kakaroto`: nomes de ativacao.
+- `REI_ACTIVE_CONVERSATION_SECONDS=120`: janela curta para continuar um fluxo ja iniciado.
 
 Ele tambem entende frases naturais de preferencia, como `sem zoeira`, `pode zoar`, `fala serio`, `para de me chamar assim` e `me chama de...`, salvando isso na memoria segmentada do usuario.
+
+Essas frases so disparam resposta quando o bot for chamado ou quando forem parte de um fluxo ativo.
+
+## Membros Do Servidor
+
+O bot cria um cache local em SQLite na tabela `guild_members`. Ele salva apenas dados publicos necessarios para resolver mencoes:
+
+- `guild_id`
+- `user_id`
+- `username`
+- `global_name`
+- `display_name`
+- `nick`
+- `mention`
+- estado ativo
+
+Ele nunca envia a lista completa de membros para a DeepSeek. A resolucao de nomes acontece localmente por ID, mention, username, display name, nick, texto parcial e nome sem acento.
+
+Frases naturais, sempre chamando o bot:
+
+- `Goku, atualiza os membros`
+- `Goku, sincroniza o servidor`
+- `Goku, status dos membros`
+- `Cacaroto, marca o Cauã`
+- `Kakaroto, avisa o João pra olhar o grupo`
+
+Protecoes:
+
+- nao marca `@everyone`;
+- nao marca `@here`;
+- nao marca todo mundo;
+- se achar varias pessoas parecidas, pede escolha;
+- sincronizacao manual exige permissao de admin/moderador.
+
+## GIFs
+
+GIFs usam uma lista local gratuita por padrao, sem API externa paga. O bot decide primeiro se deve responder; so depois decide se manda GIF.
+
+Configs:
+
+```env
+REI_GIFS_ENABLED=true
+REI_GIF_REPLY_CHANCE=0.22
+REI_GIF_MIN_CHANCE=0.20
+REI_GIF_MAX_CHANCE=0.25
+REI_GIF_COOLDOWN_SECONDS=300
+REI_GIF_MAX_PER_CHANNEL_HOUR=4
+REI_GIF_MAX_PER_USER_HOUR=3
+REI_GIF_USE_EXTERNAL_API=false
+REI_GIF_USE_LOCAL_POOL=true
+```
+
+Ele nao manda GIF em modo serio, assunto delicado, cooldown ativo, canal saturado ou quando a mensagem nem deveria receber resposta.
 
 ## Recursos Locais
 

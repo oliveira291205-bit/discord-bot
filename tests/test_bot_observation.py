@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ai.deepseek_prompt_limiter import PromptBudgetConfig
-from features.config import FunConfig, LocalReplyConfig, XPConfig
+from features.config import FunConfig, GifConfig, LocalReplyConfig, WakeWordConfig, XPConfig
 from memory.memory_config import MemoryConfig, NaturalInteractionConfig
 from rei_suzukawa.bot import BotSettings, ReiSuzukawaBot
 from rei_suzukawa.deepseek import DeepSeekSettings
@@ -23,6 +23,8 @@ class ObserveAllMessagesTests(unittest.TestCase):
                 fun=FunConfig(),
                 xp=XPConfig(),
                 local_replies=LocalReplyConfig(),
+                wake_words=WakeWordConfig(),
+                gifs=GifConfig(enabled=False),
                 prompt_budget=PromptBudgetConfig(),
                 auto_memory_enabled=True,
                 observe_all_messages=True,
@@ -62,6 +64,12 @@ class ObserveAllMessagesTests(unittest.TestCase):
             self.assertTrue(records)
             self.assertTrue(any("passo a passo" in record.content for record in records))
             self.assertTrue(all(record.user_id == "123" for record in records))
+            recent = bot.memory_service.store.list_recent_channel_messages(guild_id="456", channel_id="789", limit=5)
+            self.assertEqual(len(recent), 1)
+            self.assertIn("passo a passo", recent[0]["content"])
+            bot.memory_service.close()
+            bot.xp_service.close()
+            bot.member_directory.close()
 
 
 if __name__ == "__main__":

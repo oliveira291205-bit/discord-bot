@@ -70,7 +70,7 @@ class SQLiteMemoryTests(unittest.TestCase):
             finally:
                 service.close()
 
-    def test_observed_message_saves_generic_chat_context(self) -> None:
+    def test_observed_message_saves_recent_channel_message_without_raw_long_term_memory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = MemoryService(MemoryConfig(sqlite_path=Path(tmp) / "memory.sqlite3"))
             try:
@@ -78,12 +78,16 @@ class SQLiteMemoryTests(unittest.TestCase):
                     guild_id="1",
                     channel_id="10",
                     user_id="123",
+                    message_id="999",
                     author_name="Alek",
                     channel_name="geral",
                 )
                 service.save_observed_message(context=context, text="isso aqui foi uma conversa qualquer do chat")
                 memories = service.store.list_memories(user_id="123", channel_id="10", limit=10)
-                self.assertTrue(any("conversa qualquer" in memory.content for memory in memories))
+                self.assertFalse(any("conversa qualquer" in memory.content for memory in memories))
+                recent = service.store.list_recent_channel_messages(guild_id="1", channel_id="10", limit=10)
+                self.assertEqual(len(recent), 1)
+                self.assertIn("conversa qualquer", recent[0]["content"])
             finally:
                 service.close()
 

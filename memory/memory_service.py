@@ -116,23 +116,21 @@ class MemoryService:
     def save_observed_message(self, *, context: MemoryContext, text: str) -> list[Memory]:
         if not self.config.enabled or wants_no_save(text):
             return []
+        if context.guild_id and context.channel_id and context.user_id and context.message_id and not is_sensitive_memory(text):
+            self.store.add_recent_channel_message(
+                guild_id=context.guild_id,
+                channel_id=context.channel_id,
+                user_id=context.user_id,
+                message_id=context.message_id,
+                author_display_name=context.author_name or "usuario",
+                content=trim(text, 700),
+                created_at=context.now_iso,
+                max_per_channel=50,
+            )
         saved = self.save_from_user_message(context=context, text=text)
         if is_sensitive_memory(text):
             return saved
-
-        clean = trim(text, 500)
-        if len(clean) < 3:
-            return saved
-
-        observed = MemoryCandidate(
-            scope_type="user_channel",
-            memory_type="context",
-            content=f"Mensagem observada de {context.author_name or 'usuario'} neste canal: {clean}",
-            tags=["chat", "observado", context.channel_name or "canal"],
-            importance=2,
-            confidence=0.55,
-        )
-        return [*saved, *self.save_candidates(context=context, candidates=[observed])]
+        return saved
 
     def save_candidates(self, *, context: MemoryContext, candidates: list[MemoryCandidate]) -> list[Memory]:
         saved: list[Memory] = []
